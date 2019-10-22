@@ -174,14 +174,13 @@ func newEvent(rawData []interface{}, notifier *Notifier) (*Event, *Configuration
 
 	for i, frame := range err.StackFrames() {
 		file := frame.File
-		inProject := config.isProjectPackage(frame.Package)
+		inProject := config.isProjectPath(file) || config.isProjectPackage(frame.Package)
 
-		// remove $GOROOT and $GOHOME from other frames
-		if idx := strings.Index(file, frame.Package); idx > -1 {
-			file = file[idx:]
-		}
+		// remove roots from all file names
+		file = config.trimRoots(file)
+
 		if inProject {
-			file = config.stripProjectPackages(file)
+			file = config.stripProjects(file)
 		}
 
 		event.Stacktrace[i] = stackFrame{

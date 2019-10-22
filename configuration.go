@@ -70,6 +70,9 @@ type Configuration struct {
 	// filepath.Glob. The default value is []string{"main*"}
 	ProjectPackages []string
 
+	// paths that are part of your app.
+	ProjectPaths []string
+
 	// The SourceRoot is the directory where the application is built, and the
 	// assumed prefix of lines on the stacktrace originating in the parent
 	// application. When set, the prefix is trimmed from callstack file names
@@ -78,6 +81,11 @@ type Configuration struct {
 	// if $GOPATH is unset. At runtime, $GOROOT is the root used during the Go
 	// build.
 	SourceRoot string
+
+	// The PackageRoot is the directory where go modules live, this is trimmed
+	// from callstack file names. The default valie is $GOPATH/pkg/mod or
+	// $GOROOT/pkg/mod.
+	PackageRoot string
 
 	// Any meta-data that matches these filters will be marked as [FILTERED]
 	// before sending a Notification to Bugsnag. It defaults to
@@ -126,6 +134,9 @@ func (config *Configuration) update(other *Configuration) *Configuration {
 	if other.SourceRoot != "" {
 		config.SourceRoot = other.SourceRoot
 	}
+	if other.PackageRoot != "" {
+		config.PackageRoot = other.PackageRoot
+	}
 	if other.ReleaseStage != "" {
 		config.ReleaseStage = other.ReleaseStage
 	}
@@ -134,6 +145,9 @@ func (config *Configuration) update(other *Configuration) *Configuration {
 	}
 	if other.ProjectPackages != nil {
 		config.ProjectPackages = other.ProjectPackages
+	}
+	if other.ProjectPaths != nil {
+		config.ProjectPaths = other.ProjectPaths
 	}
 	if other.Logger != nil {
 		config.Logger = other.Logger
@@ -219,11 +233,42 @@ func (config *Configuration) isProjectPackage(pkg string) bool {
 	return false
 }
 
-func (config *Configuration) stripProjectPackages(file string) string {
-	trimmedFile := file
-	if strings.HasPrefix(trimmedFile, config.SourceRoot) {
-		trimmedFile = strings.TrimPrefix(trimmedFile, config.SourceRoot)
+func (config *Configuration) isProjectPath(file string) bool {
+	for _, p := range config.ProjectPaths {
+		if strings.HasPrefix(file, p) {
+			return true
+		}
 	}
+	return false
+}
+
+func (config *Configuration) trimRoots(file string) string {
+	if strings.HasPrefix(file, config.SourceRoot) {
+		file = strings.TrimPrefix(file, config.SourceRoot)
+	}
+	if strings.HasPrefix(file, config.PackageRoot) {
+		file = strings.TrimPrefix(file, config.PackageRoot)
+	}
+	return file
+}
+
+func (config *Configuration) stripProjects(file string) string {
+	strippedFile := config.stripProjectPaths(file)
+	strippedFile = config.stripProjectPackages(strippedFile)
+	return strippedFile
+}
+
+func (config *Configuration) stripProjectPaths(file string) string {
+	for _, p := range config.ProjectPaths {
+		if strings.HasPrefix(file, p) {
+			return strings.TrimPrefix(file, p)
+		}
+	}
+
+	return file
+}
+
+func (config *Configuration) stripProjectPackages(file string) string {
 	for _, p := range config.ProjectPackages {
 		if len(p) > 2 && p[len(p)-2] == '/' && p[len(p)-1] == '*' {
 			p = p[:len(p)-1]
@@ -232,12 +277,12 @@ func (config *Configuration) stripProjectPackages(file string) string {
 		} else {
 			p = p + "/"
 		}
-		if strings.HasPrefix(trimmedFile, p) {
-			return strings.TrimPrefix(trimmedFile, p)
+		if strings.HasPrefix(file, p) {
+			return strings.TrimPrefix(file, p)
 		}
 	}
 
-	return trimmedFile
+	return file
 }
 
 func (config *Configuration) logf(fmt string, args ...interface{}) {

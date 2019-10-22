@@ -221,10 +221,13 @@ func init() {
 
 	// Default configuration
 	sourceRoot := ""
+	packageRoot := ""
 	if gopath := os.Getenv("GOPATH"); len(gopath) > 0 {
 		sourceRoot = filepath.Join(gopath, "src") + "/"
+		packageRoot = filepath.Join(gopath, "pkg", "mod") + "/"
 	} else {
 		sourceRoot = filepath.Join(runtime.GOROOT(), "src") + "/"
+		packageRoot = filepath.Join(runtime.GOROOT(), "pkg", "mod") + "/"
 	}
 	Config.update(&Configuration{
 		APIKey: "",
@@ -239,6 +242,7 @@ func init() {
 		ReleaseStage:        "",
 		ParamsFilters:       []string{"password", "secret", "authorization", "cookie", "access_token"},
 		SourceRoot:          sourceRoot,
+		PackageRoot:         packageRoot,
 		ProjectPackages:     []string{"main*"},
 		NotifyReleaseStages: nil,
 		Logger:              log.New(os.Stdout, log.Prefix(), log.Flags()),

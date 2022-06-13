@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,12 +43,18 @@ func TestPanicHandlerHandledPanic(t *testing.T) {
 	event := getIndex(json, "events", 0)
 	assertValidSession(t, event, true)
 
-	// Yeah, we just caught a panic from the init() function below and sent it to the server running above (mindblown)
-	frame := getIndex(getIndex(event, "exceptions", 0), "stacktrace", 1)
-	if getBool(frame, "inProject") != true ||
-		getString(frame, "file") != "panicwrap_test.go" ||
-		getInt(frame, "lineNumber") == 0 {
-		t.Errorf("stack frame seems wrong at index 1: %v", frame)
+	stacktrace := getIndex(event, "exceptions", 0).Get("stacktrace")
+	found := false
+	for i := 0; i < len(stacktrace.MustArray()); i++ {
+		frame := stacktrace.GetIndex(i)
+		if strings.HasSuffix(getString(frame, "file"), "panicwrap_test.go") && getInt(frame, "lineNumber") != 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s, _ := stacktrace.EncodePretty()
+		t.Errorf("no stack frame found matching this file in stack trace: %v", string(s))
 	}
 }
 

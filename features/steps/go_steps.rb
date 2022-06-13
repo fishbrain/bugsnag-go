@@ -1,7 +1,17 @@
 require 'net/http'
 
-When(/^I wait for the app to open port "(.*)"$/) do |port|
-  wait_for_port(port)
+Given("I set environment variable {string} to the app directory") do |key|
+  step("I set environment variable \"#{key}\" to \"/app/src/test/\"")
+end
+
+Given("I set environment variable {string} to the notify endpoint") do |key|
+  step("I set environment variable \"#{key}\" to \"http://#{current_ip}:#{MOCK_API_PORT}\"")
+end
+
+Given("I set environment variable {string} to the sessions endpoint") do |key|
+  # they're the same picture dot gif
+  # split them out for the future endpoint splitting work
+  step("I set environment variable \"#{key}\" to \"http://#{current_ip}:#{MOCK_API_PORT}\"")
 end
 
 Then(/^the request(?: (\d+))? is a valid error report with api key "(.*)"$/) do |request_index, api_key|
@@ -11,6 +21,16 @@ Then(/^the request(?: (\d+))? is a valid error report with api key "(.*)"$/) do 
     And the "bugsnag-api-key" header equals "#{api_key}" for request #{request_index}
     And the payload field "apiKey" equals "#{api_key}" for request #{request_index}
   }
+end
+
+Then(/^the exception is a PathError for request (\d+)$/) do |request_index|
+  body = find_request(request_index)[:body]
+  error_class = body["events"][0]["exceptions"][0]["errorClass"]
+  if ['1.11', '1.12', '1.13', '1.14', '1.15'].include? ENV['GO_VERSION']
+    assert_equal(error_class, '*os.PathError')
+  else
+    assert_equal(error_class, '*fs.PathError')
+  end
 end
 
 Then(/^the request(?: (\d+))? is a valid session report with api key "(.*)"$/) do |request_index, api_key|
@@ -34,7 +54,7 @@ Then(/^the number of sessions started equals (\d+) for request (\d+)$/) do |coun
 end
 
 When("I run the go service {string} with the test case {string}") do  |service, testcase|
-  run_service_with_command(service, "go run main.go -test=\"#{testcase}\"")
+  run_service_with_command(service, "./run.sh go run . -test=\"#{testcase}\"")
 end
 
 Then(/^I wait to receive a request after the start up session$/) do
@@ -63,4 +83,40 @@ Then(/^I wait to receive (\d+) requests after the start up session?$/) do |reque
   # Wait an extra second to ensure there are no further requests
   sleep 1
   assert_equal(request_count, stored_requests.size, "#{stored_requests.size} requests received")
+end
+
+Then(/^(\d+) requests? (?:was|were) received$/) do |request_count|
+  sleep 1
+  assert_equal(request_count, stored_requests.size, "#{stored_requests.size} requests received")
+end
+
+Then("the in-project frames of the stacktrace are:") do |table|
+  body = find_request(0)[:body]
+  stacktrace = body["events"][0]["exceptions"][0]["stacktrace"]
+  found = 0 # counts matching frames and ensures ordering is correct
+  expected = table.hashes.length
+  stacktrace.each do |frame|
+    if found < expected and frame["inProject"] and
+        frame["file"] == table.hashes[found]["file"] and
+        frame["method"] == table.hashes[found]["method"]
+      found = found + 1
+    end
+  end
+  assert_equal(found, expected, "expected #{expected} matching frames but found #{found}. stacktrace:\n#{stacktrace}")
+end
+
+Then("stack frame {int} contains a local function spanning {int} to {int}") do |frame, val, old_val|
+  # Old versions of Go put the line number on the end of the function
+  if ['1.7', '1.8'].include? ENV['GO_VERSION']
+    step "the \"lineNumber\" of stack frame #{frame} equals #{old_val}"
+  else
+    step "the \"lineNumber\" of stack frame #{frame} equals #{val}"
+  end
+end
+
+Then("the exception {string} is one of:") do |key, table|
+  body = find_request(0)[:body]
+  exception = body["events"][0]["exceptions"][0]
+  options = table.raw.flatten
+  assert(options.include?(exception[key]), "expected '#{key}' to be one of #{options}")
 end
